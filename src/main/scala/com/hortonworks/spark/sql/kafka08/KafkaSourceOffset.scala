@@ -20,6 +20,9 @@ package com.hortonworks.spark.sql.kafka08
 import kafka.common.TopicAndPartition
 import org.apache.spark.sql.execution.streaming.Offset
 import org.apache.spark.streaming.kafka.KafkaCluster.LeaderOffset
+import org.json4s.NoTypeHints
+import org.json4s.jackson.Serialization
+
 
 /**
  * An [[Offset]] for the [[KafkaSource]]. This one tracks all partitions of subscribed topics and
@@ -27,13 +30,15 @@ import org.apache.spark.streaming.kafka.KafkaCluster.LeaderOffset
  */
 case class KafkaSourceOffset(partitionToOffsets: Map[TopicAndPartition, LeaderOffset])
   extends Offset {
-  override def toString(): String = {
-    partitionToOffsets.toSeq.sortBy(_._1.toString).mkString("[", ", ", "]")
+  override def json(): String = {
+    KafkaSourceOffset.json(partitionToOffsets)
   }
 }
 
 /** Companion object of the [[KafkaSourceOffset]] */
 object KafkaSourceOffset {
+
+  private implicit val formats = Serialization.formats(NoTypeHints)
 
   def getPartitionOffsets(offset: Offset): Map[TopicAndPartition, LeaderOffset] = {
     offset match {
@@ -42,6 +47,20 @@ object KafkaSourceOffset {
         throw new IllegalArgumentException(
           s"Invalid conversion from offset of ${offset.getClass} to KafkaSourceOffset")
     }
+  }
+
+  def json(partitionOffsets: Map[TopicAndPartition, LeaderOffset]): String = {
+    Serialization.write(partitionOffsets.map { case (tp, off) =>
+      Serialization.write(tp) -> Serialization.write(off)
+    })
+  }
+
+  def apply(json: String): KafkaSourceOffset = {
+    KafkaSourceOffset(
+      Serialization.read[Map[String, String]](json).map { case (tpJs, offJs) =>
+        Serialization.read[TopicAndPartition](tpJs) -> Serialization.read[LeaderOffset](offJs)
+      }
+    )
   }
 }
 
